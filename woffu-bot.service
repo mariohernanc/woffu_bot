@@ -1,0 +1,20 @@
+[Unit]
+Description=Woffu auto-sign bot (browser mode)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=woffu
+WorkingDirectory=/opt/woffu-bot
+EnvironmentFile=-/opt/woffu-bot/.env
+ExecStart=/opt/woffu-bot/venv/bin/python /opt/woffu-bot/main.py --config /opt/woffu-bot/config.yaml
+Restart=on-failure
+RestartSec=60
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

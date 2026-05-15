@@ -1,0 +1,132 @@
+# =============================================================================
+# Configuración del bot de fichaje Woffu (modo navegador real)
+# =============================================================================
+
+# --- Credenciales (mejor por variables de entorno; ver .env.example) ---
+woffu:
+  username: ""             # vacío => usa $WOFFU_USERNAME
+  password: ""             # vacío => usa $WOFFU_PASSWORD
+  url: "https://grupoapex.woffu.com/v2/personal/dashboard/user?lang=es"
+  login_url: "https://grupoapex.woffu.com/"
+
+# --- Zona horaria ---
+timezone: "Europe/Madrid"
+
+# --- Variabilidad aleatoria en minutos ---
+# Ej: con jitter_min=2 y jitter_max=3, si la hora es 06:00, fichará entre
+# 06:02:00 y 06:03:00 (con segundos también aleatorios).
+jitter:
+  min_minutes: 2
+  max_minutes: 3
+
+# --- Horarios por día de la semana ---
+# Cada día = lista de pares entrada/salida. [] = no se trabaja ese día.
+schedule:
+  monday:
+    - in:  "06:00"
+      out: "12:00"
+    - in:  "13:00"
+      out: "15:30"
+  tuesday:
+    - in:  "06:00"
+      out: "12:00"
+    - in:  "13:00"
+      out: "15:30"
+  wednesday:
+    - in:  "06:00"
+      out: "12:00"
+    - in:  "13:00"
+      out: "15:30"
+  thursday:
+    - in:  "06:00"
+      out: "12:00"
+    - in:  "13:00"
+      out: "15:30"
+  friday:
+    - in:  "07:00"
+      out: "15:00"
+  saturday: []
+  sunday: []
+
+# --- Días excluidos (festivos, vacaciones, etc.) ---
+excluded_dates:
+  single:
+    - "2026-01-01"
+    - "2026-01-06"
+    - "2026-05-01"
+    - "2026-12-25"
+  ranges:
+    - start: "2026-08-01"
+      end:   "2026-08-15"
+      note:  "Vacaciones de verano"
+    - start: "2026-12-22"
+      end:   "2026-12-31"
+      note:  "Vacaciones de Navidad"
+
+# --- Logging ---
+logging:
+  level: "INFO"
+  file: "logs/woffu.log"
+  max_size_mb: 5
+  backup_count: 5
+
+# --- Navegador ---
+browser:
+  # En VPS sin pantalla DEBE ser true.
+  headless: true
+
+  # Carpeta donde Playwright guarda perfil persistente (cookies, sesión).
+  # Así el bot reutiliza la sesión y no parece "logueo nuevo cada vez".
+  user_data_dir: "browser_profile"
+
+  # User-Agent realista (Chrome estable, ajusta si caduca)
+  user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+  # Viewport
+  viewport_width: 1366
+  viewport_height: 768
+
+  # Idioma y timezone que Playwright reportará al navegador
+  locale: "es-ES"
+
+  # Selectores CSS/XPath del botón de fichaje (varían entre instancias de
+  # Woffu). El bot prueba cada uno por orden hasta encontrar uno visible.
+  selectors:
+    sign_button:
+      - "button:has-text('Fichar')"
+      - "button:has-text('Entrada')"
+      - "button:has-text('Salida')"
+      - "[data-cy='sign-button']"
+      - ".sign-button"
+      - "#signButton"
+
+    # Selectores del formulario de login
+    username_field:
+      - "input[name='username']"
+      - "input[type='email']"
+      - "#username"
+    password_field:
+      - "input[name='password']"
+      - "input[type='password']"
+      - "#password"
+    submit_button:
+      - "button[type='submit']"
+      - "button:has-text('Entrar')"
+      - "button:has-text('Iniciar sesión')"
+      - "input[type='submit']"
+
+  # Tiempos
+  navigation_timeout_ms: 45000
+  action_timeout_ms: 15000
+
+  # Captura screenshots cuando algo va mal (útil para depurar selectores)
+  screenshot_on_error: true
+  screenshot_dir: "screenshots"
+
+# --- Comportamiento ---
+behavior:
+  catch_up_window_minutes: 10
+  max_retries: 3
+  retry_delay_seconds: 30
+  # Si dry_run = true, navega y hace login pero NO pulsa el botón final.
+  dry_run: false
