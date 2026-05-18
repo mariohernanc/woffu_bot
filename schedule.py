@@ -106,7 +106,7 @@ class Schedule:
         return out
 
     def _deterministic_jitter_seconds(self, d: date, idx: int) -> float:
-        if self.jitter_max <= 0:
+        if self.jitter_min == 0 and self.jitter_max == 0:
             return 0.0
         seed = f"{d.isoformat()}#{idx}"
         rnd = random.Random(seed)

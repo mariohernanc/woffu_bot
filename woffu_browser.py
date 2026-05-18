@@ -104,6 +104,7 @@ class WoffuBrowserClient:
         sel = self.browser_cfg.get("selectors", {}) or {}
         self.sel_sign_button: List[str] = sel.get("sign_button", []) or []
         self.sel_username: List[str] = sel.get("username_field", []) or []
+        self.sel_next: List[str] = sel.get("next_button", []) or []
         self.sel_password: List[str] = sel.get("password_field", []) or []
         self.sel_submit: List[str] = sel.get("submit_button", []) or []
 
@@ -171,8 +172,15 @@ class WoffuBrowserClient:
             await page.goto(self.dashboard_url, wait_until="domcontentloaded")
             await self._human_sleep(1.5, 3.0)
 
+        # Cerrar popups/encuestas y paneles laterales antes de actuar
+        await self._dismiss_popups(page)
+        await self._close_panels(page)
+
         # Comportamiento humano: pequeño scroll y movimiento de ratón antes de actuar
         await self._humanize(page)
+
+        # Cerrar panel si los movimientos de ratón lo reabrieron
+        await self._close_panels(page)
 
         # Buscar el botón de fichaje
         button = await self._find_sign_button(page)
@@ -195,8 +203,10 @@ class WoffuBrowserClient:
         await button.click(delay=random.randint(60, 180))
         log.info("Botón de fichaje pulsado.")
 
-        # Esperar la respuesta visual (cambio de texto, modal, etc.)
-        await self._human_sleep(2.0, 4.0)
+        # Esperar respuesta y cerrar popup si aparece tras el click
+        await self._human_sleep(2.0, 3.0)
+        await self._dismiss_popups(page)
+        await self._human_sleep(1.0, 2.0)
 
         # Captura "ok" para auditoría
         await self._screenshot(page, f"ok_{action}")
@@ -223,25 +233,44 @@ class WoffuBrowserClient:
                 "Faltan credenciales (WOFFU_USERNAME/WOFFU_PASSWORD o config.yaml)"
             )
 
-        # Algunas instalaciones de Woffu redirigen a una URL de login distinta.
-        # Si no estamos ya en un formulario, vamos a login_url.
         if not await self._first_visible(page, self.sel_username):
-            await page.goto(self.login_url, wait_until="domcontentloaded")
-            await self._human_sleep(1.0, 2.0)
+            await page.goto(self.login_url, wait_until="networkidle")
+            await self._human_sleep(1.5, 2.5)
 
         user_el = await self._first_visible(page, self.sel_username)
-        pwd_el = await self._first_visible(page, self.sel_password)
-        if not user_el or not pwd_el:
+        if not user_el:
             await self._screenshot(page, "login_form_not_found")
             raise RuntimeError(
-                "No se encontró el formulario de login. "
-                "Revisa browser.selectors.username_field/password_field"
+                "No se encontró el campo de usuario. "
+                "Revisa browser.selectors.username_field"
             )
 
         await self._human_move_to(page, user_el)
         await user_el.click()
         await self._human_type(page, self.user)
         await self._human_sleep(0.4, 1.0)
+
+        # Detectar si el login es de 2 pasos (email → Siguiente → contraseña)
+        pwd_el = await self._first_visible(page, self.sel_password)
+        if pwd_el is None:
+            next_btn = await self._first_visible(page, self.sel_next)
+            if next_btn:
+                log.info("Login de 2 pasos detectado, pulsando 'Siguiente'…")
+                await self._human_move_to(page, next_btn)
+                await next_btn.click(delay=random.randint(60, 180))
+                await self._human_sleep(1.5, 3.0)
+                pwd_el = await self._first_visible(page, self.sel_password)
+            else:
+                await user_el.press("Enter")
+                await self._human_sleep(1.5, 3.0)
+                pwd_el = await self._first_visible(page, self.sel_password)
+
+        if not pwd_el:
+            await self._screenshot(page, "login_form_not_found")
+            raise RuntimeError(
+                "No se encontró el campo de contraseña tras el paso 1. "
+                "Revisa browser.selectors.password_field"
+            )
 
         await self._human_move_to(page, pwd_el)
         await pwd_el.click()
@@ -253,7 +282,6 @@ class WoffuBrowserClient:
             await self._human_move_to(page, submit)
             await submit.click(delay=random.randint(60, 180))
         else:
-            # Enter como fallback
             await pwd_el.press("Enter")
 
         try:
@@ -267,16 +295,28 @@ class WoffuBrowserClient:
     # Búsqueda del botón
     # ------------------------------------------------------------------
     async def _find_sign_button(self, page: Page):
-        # Esperamos hasta 20s a que aparezca alguno
+        # Esperamos hasta 20s a que aparezca alguno.
+        # Si hay varios botones con el mismo texto (panel + cronómetro),
+        # elegimos el más cercano al centro horizontal de la pantalla.
+        center_x = self.viewport["width"] / 2
         deadline = time.monotonic() + 20.0
         while time.monotonic() < deadline:
+            candidates = []
             for sel in self.sel_sign_button:
                 try:
-                    el = await page.query_selector(sel)
-                    if el and await el.is_visible() and await el.is_enabled():
-                        return el
+                    els = await page.query_selector_all(sel)
+                    for el in els:
+                        if await el.is_visible() and await el.is_enabled():
+                            box = await el.bounding_box()
+                            if box:
+                                btn_center_x = box["x"] + box["width"] / 2
+                                dist = abs(btn_center_x - center_x)
+                                candidates.append((dist, el))
                 except Exception:
                     continue
+            if candidates:
+                candidates.sort(key=lambda c: c[0])
+                return candidates[0][1]
             await asyncio.sleep(0.5)
         return None
 
@@ -291,15 +331,59 @@ class WoffuBrowserClient:
         return None
 
     # ------------------------------------------------------------------
+    # Cierre de popups / encuestas
+    # ------------------------------------------------------------------
+    async def _dismiss_popups(self, page: Page) -> None:
+        """Cierra cualquier modal o encuesta que bloquee la página."""
+        close_selectors = [
+            "button[aria-label='Close']",
+            "button[aria-label='Cerrar']",
+            "button.close",
+            "[class*='modal'] button[class*='close']",
+            "[class*='survey'] button[class*='close']",
+            "button:has-text('×')",
+            "button:has-text('Cerrar')",
+            "button:has-text('No, gracias')",
+            "button:has-text('Omitir')",
+            ".modal-close",
+        ]
+        for sel in close_selectors:
+            try:
+                el = await page.query_selector(sel)
+                if el and await el.is_visible():
+                    log.info("Cerrando popup: %s", sel)
+                    await el.click()
+                    await self._human_sleep(0.5, 1.0)
+                    return
+            except Exception:
+                continue
+
+    async def _close_panels(self, page: Page) -> None:
+        """Cierra el panel de presencia/horario que aparece en la esquina superior derecha."""
+        try:
+            await page.keyboard.press("Escape")
+            await self._human_sleep(0.3, 0.6)
+            # Click en el título central de la página (zona segura, lejos del panel)
+            await page.mouse.click(
+                self.viewport["width"] // 2,
+                self.viewport["height"] // 2 - 150,
+            )
+            await self._human_sleep(0.3, 0.6)
+        except Exception as e:
+            log.debug("close_panels ignorado: %s", e)
+
+    # ------------------------------------------------------------------
     # Comportamiento humano
     # ------------------------------------------------------------------
     async def _humanize(self, page: Page) -> None:
         """Pequeños gestos antes de actuar: mover ratón, scroll suave."""
         try:
-            # Movimiento aleatorio de ratón
+            # Movimiento aleatorio de ratón — evitar la esquina superior derecha
+            # donde está el icono del panel de presencia
+            safe_x_max = self.viewport["width"] - 300
             for _ in range(random.randint(1, 3)):
-                x = random.randint(100, self.viewport["width"] - 100)
-                y = random.randint(100, self.viewport["height"] - 200)
+                x = random.randint(100, safe_x_max)
+                y = random.randint(150, self.viewport["height"] - 200)
                 await page.mouse.move(x, y, steps=random.randint(15, 30))
                 await self._human_sleep(0.15, 0.5)
 

@@ -180,8 +180,14 @@ async def run_loop_async(cfg: dict, sched_obj: Schedule) -> int:
         if not ok:
             log.error("Fichaje %s ABORTADO tras %d intentos", nxt, max_retries)
 
-        # Pausa para que el "siguiente pendiente" pase al siguiente slot
-        await asyncio.sleep(5)
+        # Dormir hasta pasada la ventana de catch-up del slot que acabamos de
+        # ejecutar, para que next_pending no lo devuelva de nuevo.
+        skip_until = nxt.when + timedelta(minutes=catch_up + 1)
+        now_after = datetime.now(sched_obj.tz)
+        if now_after < skip_until:
+            log.info("Slot procesado. Esperando hasta %s antes de buscar el siguiente…",
+                     skip_until.strftime("%H:%M:%S"))
+            await _wait_until(skip_until, stop_event)
 
     log.info("Bot detenido.")
     return 0

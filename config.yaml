@@ -16,34 +16,34 @@ timezone: "Europe/Madrid"
 # Ej: con jitter_min=2 y jitter_max=3, si la hora es 06:00, fichará entre
 # 06:02:00 y 06:03:00 (con segundos también aleatorios).
 jitter:
-  min_minutes: 2
+  min_minutes: -2
   max_minutes: 3
 
 # --- Horarios por día de la semana ---
 # Cada día = lista de pares entrada/salida. [] = no se trabaja ese día.
 schedule:
   monday:
-    - in:  "06:00"
-      out: "12:00"
-    - in:  "13:00"
-      out: "15:30"
+    - in:  "08:00"
+      out: "14:00"
+    - in:  "15:00"
+      out: "17:20"
   tuesday:
-    - in:  "06:00"
-      out: "12:00"
-    - in:  "13:00"
-      out: "15:30"
+    - in:  "08:00"
+      out: "14:00"
+    - in:  "15:00"
+      out: "17:20"
   wednesday:
-    - in:  "06:00"
-      out: "12:00"
-    - in:  "13:00"
-      out: "15:30"
+    - in:  "08:00"
+      out: "14:00"
+    - in:  "15:00"
+      out: "17:20"
   thursday:
-    - in:  "06:00"
-      out: "12:00"
-    - in:  "13:00"
-      out: "15:30"
+    - in:  "08:00"
+      out: "14:00"
+    - in:  "15:00"
+      out: "17:20"
   friday:
-    - in:  "07:00"
+    - in:  "08:00"
       out: "15:00"
   saturday: []
   sunday: []
@@ -93,25 +93,31 @@ browser:
   # Woffu). El bot prueba cada uno por orden hasta encontrar uno visible.
   selectors:
     sign_button:
+      - "button:has-text('Entrar')"
+      - "button:has-text('Salida')"
       - "button:has-text('Fichar')"
       - "button:has-text('Entrada')"
-      - "button:has-text('Salida')"
       - "[data-cy='sign-button']"
       - ".sign-button"
       - "#signButton"
 
     # Selectores del formulario de login
     username_field:
+      - "input[placeholder='Introduce tu email']"
+      - "input[placeholder='Tu e-mail']"
       - "input[name='username']"
       - "input[type='email']"
       - "#username"
+    next_button:
+      - "button:has-text('Siguiente')"
     password_field:
+      - "input[placeholder='Contraseña']"
       - "input[name='password']"
       - "input[type='password']"
       - "#password"
     submit_button:
-      - "button[type='submit']"
       - "button:has-text('Entrar')"
+      - "button[type='submit']"
       - "button:has-text('Iniciar sesión')"
       - "input[type='submit']"
 

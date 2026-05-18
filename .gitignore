@@ -1,0 +1,7 @@
+venv/
+browser_profile/
+screenshots/
+logs/
+__pycache__/
+*.pyc
+.env
