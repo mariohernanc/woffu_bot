@@ -94,9 +94,10 @@ browser:
   selectors:
     sign_button:
       - "button:has-text('Entrar')"
-      - "button:has-text('Salida')"
+      - "button:has-text('Salir')"
       - "button:has-text('Fichar')"
       - "button:has-text('Entrada')"
+      - "button:has-text('Salida')"
       - "[data-cy='sign-button']"
       - ".sign-button"
       - "#signButton"
