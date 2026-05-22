@@ -186,6 +186,18 @@ class WoffuBrowserClient:
         button = await self._find_sign_button(page)
         if button is None:
             await self._screenshot(page, f"no_button_{action}")
+            try:
+                btns = await page.query_selector_all("button")
+                visible = []
+                for b in btns:
+                    if await b.is_visible():
+                        txt = (await b.inner_text()).strip()
+                        box = await b.bounding_box()
+                        visible.append(f"{repr(txt)} @ {box}")
+                log.error("Botones visibles en la página: %s", visible)
+                log.error("URL actual: %s", page.url)
+            except Exception as diag_err:
+                log.debug("Diagnóstico de botones falló: %s", diag_err)
             raise RuntimeError(
                 "No se encontró el botón de fichaje. "
                 "Revisa browser.selectors.sign_button en config.yaml "
@@ -216,15 +228,14 @@ class WoffuBrowserClient:
     # Login
     # ------------------------------------------------------------------
     async def _looks_like_login(self, page: Page) -> bool:
-        """Heurística: hay un campo de password visible."""
-        for sel in self.sel_password:
+        """Detecta login page: campo de password (paso 2) o de email (paso 1 de login 2-pasos)."""
+        for sel in self.sel_password + self.sel_username:
             try:
                 el = await page.query_selector(sel)
                 if el and await el.is_visible():
                     return True
             except Exception:
                 pass
-        # Backup: la URL contiene "login"
         return "login" in page.url.lower() or "signin" in page.url.lower()
 
     async def _do_login(self, page: Page) -> None:
