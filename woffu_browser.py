@@ -269,12 +269,10 @@ class WoffuBrowserClient:
                 log.info("Login de 2 pasos detectado, pulsando 'Siguiente'…")
                 await self._human_move_to(page, next_btn)
                 await next_btn.click(delay=random.randint(60, 180))
-                await self._human_sleep(1.5, 3.0)
-                pwd_el = await self._first_visible(page, self.sel_password)
             else:
                 await user_el.press("Enter")
-                await self._human_sleep(1.5, 3.0)
-                pwd_el = await self._first_visible(page, self.sel_password)
+            log.info("Esperando campo de contraseña tras el paso 1…")
+            pwd_el = await self._wait_for_first_visible(page, self.sel_password, timeout_ms=10000)
 
         if not pwd_el:
             await self._screenshot(page, "login_form_not_found")
@@ -340,6 +338,22 @@ class WoffuBrowserClient:
             except Exception:
                 continue
         return None
+
+    async def _wait_for_first_visible(
+        self, page: Page, selectors: List[str], timeout_ms: int = 10000
+    ):
+        """Como _first_visible pero espera activamente con un único timeout compartido."""
+        # Filtra selectores CSS estándar (sin pseudo-selectores Playwright como :has-text)
+        css_selectors = [s for s in selectors if ":has-text(" not in s and ">>>" not in s]
+        combined = ", ".join(css_selectors) if css_selectors else None
+        if combined:
+            try:
+                await page.wait_for_selector(combined, state="visible", timeout=timeout_ms)
+            except PWTimeoutError:
+                pass
+            except Exception:
+                pass
+        return await self._first_visible(page, selectors)
 
     # ------------------------------------------------------------------
     # Cierre de popups / encuestas
