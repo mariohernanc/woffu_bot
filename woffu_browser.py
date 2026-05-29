@@ -182,47 +182,60 @@ class WoffuBrowserClient:
         # Cerrar panel si los movimientos de ratón lo reabrieron
         await self._close_panels(page)
 
-        # Buscar el botón de fichaje
-        button = await self._find_sign_button(page)
-        if button is None:
-            await self._screenshot(page, f"no_button_{action}")
-            try:
-                btns = await page.query_selector_all("button")
-                visible = []
-                for b in btns:
-                    if await b.is_visible():
-                        txt = (await b.inner_text()).strip()
-                        box = await b.bounding_box()
-                        visible.append(f"{repr(txt)} @ {box}")
-                log.error("Botones visibles en la página: %s", visible)
-                log.error("URL actual: %s", page.url)
-            except Exception as diag_err:
-                log.debug("Diagnóstico de botones falló: %s", diag_err)
-            raise RuntimeError(
-                "No se encontró el botón de fichaje. "
-                "Revisa browser.selectors.sign_button en config.yaml "
-                "(hay un screenshot en la carpeta screenshots/)."
+        for attempt in range(1, 4):
+            if attempt > 1:
+                log.info("Reintentando click en botón de fichaje (intento %d/3)…", attempt)
+                await self._dismiss_popups(page)
+                await self._close_panels(page)
+
+            button = await self._find_sign_button(page)
+            if button is None:
+                await self._screenshot(page, f"no_button_{action}")
+                try:
+                    btns = await page.query_selector_all("button")
+                    visible = []
+                    for b in btns:
+                        if await b.is_visible():
+                            txt = (await b.inner_text()).strip()
+                            box = await b.bounding_box()
+                            visible.append(f"{repr(txt)} @ {box}")
+                    log.error("Botones visibles en la página: %s", visible)
+                    log.error("URL actual: %s", page.url)
+                except Exception as diag_err:
+                    log.debug("Diagnóstico de botones falló: %s", diag_err)
+                raise RuntimeError(
+                    "No se encontró el botón de fichaje. "
+                    "Revisa browser.selectors.sign_button en config.yaml "
+                    "(hay un screenshot en la carpeta screenshots/)."
+                )
+
+            if dry_run:
+                text = (await button.inner_text()).strip()
+                log.warning("DRY-RUN: encontrado botón '%s' pero NO se pulsa.", text)
+                return True
+
+            await self._human_move_to(page, button)
+            await self._human_sleep(0.3, 0.9)
+            await button.click(delay=random.randint(60, 180))
+            log.info("Botón de fichaje pulsado.")
+
+            await self._human_sleep(2.0, 3.0)
+            await self._dismiss_popups(page)
+            await self._human_sleep(1.0, 2.0)
+
+            if await self._sign_confirmed(page, action):
+                await self._screenshot(page, f"ok_{action}")
+                return True
+
+            log.warning(
+                "Fichaje no confirmado (intento %d/3) — el botón no cambió de estado.", attempt
             )
+            await self._screenshot(page, f"no_state_change_{action}")
+            if attempt < 3:
+                await self._human_sleep(10.0, 15.0)
 
-        if dry_run:
-            text = (await button.inner_text()).strip()
-            log.warning("DRY-RUN: encontrado botón '%s' pero NO se pulsa.", text)
-            return True
-
-        # Mover el ratón al botón con una curva humana y hacer clic
-        await self._human_move_to(page, button)
-        await self._human_sleep(0.3, 0.9)
-        await button.click(delay=random.randint(60, 180))
-        log.info("Botón de fichaje pulsado.")
-
-        # Esperar respuesta y cerrar popup si aparece tras el click
-        await self._human_sleep(2.0, 3.0)
-        await self._dismiss_popups(page)
-        await self._human_sleep(1.0, 2.0)
-
-        # Captura "ok" para auditoría
-        await self._screenshot(page, f"ok_{action}")
-        return True
+        log.error("Fichaje NO registrado — botón no cambió de estado tras 3 intentos.")
+        return False
 
     # ------------------------------------------------------------------
     # Login
@@ -354,6 +367,29 @@ class WoffuBrowserClient:
             except Exception:
                 pass
         return await self._first_visible(page, selectors)
+
+    async def _sign_confirmed(self, page: Page, action: str) -> bool:
+        """
+        Espera hasta 8s a que el botón muestre el estado opuesto al pulsado.
+          action='in'  → tras entrar,  debe aparecer 'Salir' / 'Salida'
+          action='out' → tras salir,   debe aparecer 'Entrar' / 'Entrada'
+        """
+        expected = {"salir", "salida"} if action == "in" else {"entrar", "entrada"}
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            for sel in self.sel_sign_button:
+                try:
+                    els = await page.query_selector_all(sel)
+                    for el in els:
+                        if await el.is_visible():
+                            txt = (await el.inner_text()).strip().lower()
+                            if txt in expected:
+                                log.info("Fichaje confirmado — botón ahora muestra '%s'.", txt)
+                                return True
+                except Exception:
+                    pass
+            await asyncio.sleep(0.5)
+        return False
 
     # ------------------------------------------------------------------
     # Cierre de popups / encuestas
